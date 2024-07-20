@@ -1,0 +1,10 @@
+# Ignore the node_modules directory
+./wandb
+./data
+./checkpoints
+
+# ipynb checkpoints
+.ipynb_checkpoints
+
+# python bytecode-compiled
+__pycache__
