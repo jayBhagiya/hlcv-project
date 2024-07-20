@@ -1,0 +1,42 @@
+000 (57500.000.000) 2024-07-19 13:46:04 Job submitted from host: <134.96.227.100:9618?addrs=134.96.227.100-9618&alias=conduit.hpc.uni-saarland.de&noUDP&sock=schedd_3230098_2371>
+...
+040 (57500.000.000) 2024-07-19 13:46:22 Started transferring input files
+	Transferring to host: <134.96.59.24:9618?addrs=134.96.59.24-9618&alias=tenos.hpc.uni-saarland.de&noUDP&sock=teaching3_2593_c0c3_887>
+...
+040 (57500.000.000) 2024-07-19 13:46:22 Finished transferring input files
+...
+001 (57500.000.000) 2024-07-19 13:46:23 Job executing on host: <134.96.59.24:9618?addrs=134.96.59.24-9618&alias=tenos.hpc.uni-saarland.de&noUDP&sock=startd_2333_d28a>
+	SlotName: @tenos.hpc.uni-saarland.de
+	AvailableGPUs = { GPUs_GPU_d5253375 }
+	CondorScratchDir = "/raid/condor/lib/condor/execute/dir_3962564"
+	Cpus = 7
+	Disk = 443889126
+	GPUs = 1
+	GPUs_GPU_d5253375 = [ DeviceUuid = "d5253375-1c13-1fe9-61a1-ce377a93b5b0"; DevicePciBusId = "0000:09:00.0"; Capability = 6.0; DeviceName = "Tesla P100-SXM2-16GB"; DriverVersion = 12.3; Id = "GPU-d5253375"; ECCEnabled = true; GlobalMemoryMb = 16276; MaxSupportedVersion = 12030 ]
+	Memory = 96737
+...
+040 (57500.000.000) 2024-07-19 13:48:35 Started transferring output files
+...
+040 (57500.000.000) 2024-07-19 13:48:35 Finished transferring output files
+...
+005 (57500.000.000) 2024-07-19 13:48:35 Job terminated.
+	(1) Normal termination (return value 0)
+		Usr 0 00:00:00, Sys 0 00:00:00  -  Run Remote Usage
+		Usr 0 00:00:00, Sys 0 00:00:00  -  Run Local Usage
+		Usr 0 00:00:00, Sys 0 00:00:00  -  Total Remote Usage
+		Usr 0 00:00:00, Sys 0 00:00:00  -  Total Local Usage
+	12166  -  Run Bytes Sent By Job
+	1358  -  Run Bytes Received By Job
+	12166  -  Total Bytes Sent By Job
+	1358  -  Total Bytes Received By Job
+	Partitionable Resources :    Usage  Request Allocated Assigned
+	   Cpus                 :        0        4         7 
+	   Disk (KB)            :       32        2 443889126 
+	   Gpus (Average)       :        0        0         1 "GPU-d5253375"
+	   GpusMemory (MB)      :      110                    
+	   Memory (MB)          :             12288     96737 
+	   TimeExecute (s)      :      131                    
+	   TimeSlotBusy (s)     :      133                    
+
+	Job terminated of its own accord at 2024-07-19T11:48:34Z with exit-code 0.
+...

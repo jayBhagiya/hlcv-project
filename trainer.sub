@@ -1,0 +1,17 @@
+universe                = docker
+docker_image            = nvidia/cuda:11.4.3-runtime-ubuntu20.04
+executable              = run_task.sh
+arguments               = /home/hlcv_team017/hlcv-project-gans/src/trainer.py
+environment             = PROJECT_ROOT=$ENV(PWD)
+initialdir              = $ENV(PWD)
+output                  = logs/trainer.$(ClusterId).$(ProcId).out
+error                   = logs/trainer.$(ClusterId).$(ProcId).err
+log                     = logs/trainer.$(ClusterId).log
+transfer_output         = True
+request_GPUs            = 1
+request_CPUs            = 1
+request_memory          = 4G
+requirements            = UidDomain == "cs.uni-saarland.de"
+getenv                  = HOME
++WantGPUHomeMounted     = true
+queue 1
