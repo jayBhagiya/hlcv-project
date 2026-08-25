@@ -1,0 +1,23 @@
+project_dir = /nethome/jabhagiya/projects/hlcv-project-gans
+data_dir = /data/users/jabhagiya/hlcv-project-gans
+
+universe = docker
+docker_image = pytorch/pytorch:2.2.2-cuda11.8-cudnn8-runtime
+initialdir = /nethome/jabhagiya
+executable = $(project_dir)/condor/run.sh
+arguments = setup
+environment = "PROJECT_DIR=$(project_dir) DATA_DIR=$(data_dir) VENV=$(data_dir)/venvs/hlcv-project-gans"
+should_transfer_files = NO
+getenv = HOME
++WantGPUHomeMounted = true
+
+output = $(project_dir)/logs/setup.$(ClusterId).$(ProcId).out
+error = $(project_dir)/logs/setup.$(ClusterId).$(ProcId).err
+log = $(project_dir)/logs/setup.$(ClusterId).log
+
+request_cpus = 4
+request_memory = 12G
+request_disk = 10G
+request_gpus = 0
+
+queue 1

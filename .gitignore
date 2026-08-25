@@ -10,3 +10,5 @@ weights
 
 # python bytecode-compiled
 __pycache__
+*.egg-info/
+.venv/
