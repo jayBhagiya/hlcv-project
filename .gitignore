@@ -2,9 +2,11 @@
 wandb
 data
 checkpoints
+weights
 
 # ipynb checkpoints
 .ipynb_checkpoints
+.pth
 
 # python bytecode-compiled
 __pycache__
