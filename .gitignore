@@ -1,6 +1,7 @@
 data/
 runs/
 wandb/
+evaluations/
 .venv/
 *.egg-info/
 *.pt

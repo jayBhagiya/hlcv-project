@@ -65,6 +65,8 @@ class DataManifestTest(unittest.TestCase):
                 "--output",
                 str(training_output),
                 "--epochs",
+                "5",
+                "--patience",
                 "1",
                 "--batch-size",
                 "3",
@@ -79,9 +81,15 @@ class DataManifestTest(unittest.TestCase):
                 "--wandb-mode",
                 "offline",
             ]
+            epochs = [
+                (0.5, 0.0),
+                (0.4, 8.0),
+                (0.4, 0.0),
+                (0.5, 7.0),
+            ]
             with patch.object(sys, "argv", arguments), patch(
-                "src.train_l1.wandb.init"
-            ) as wandb_init:
+                "src.train_l1.run_epoch", side_effect=epochs
+            ), patch("src.train_l1.wandb.init") as wandb_init:
                 train_main()
             self.assertTrue((training_output / "best.pt").is_file())
             self.assertTrue((training_output / "last.pt").is_file())
@@ -89,8 +97,12 @@ class DataManifestTest(unittest.TestCase):
             self.assertTrue((training_output / "validation-last.png").is_file())
             with Image.open(training_output / "validation-best.png") as panel:
                 self.assertEqual(panel.size, (144, 32))
+            with (training_output / "history.csv").open(encoding="utf-8") as file:
+                self.assertEqual(len(file.readlines()), 3)
             self.assertEqual(wandb_init.call_args.kwargs["mode"], "offline")
-            wandb_init.return_value.__enter__.return_value.log.assert_called_once()
+            self.assertEqual(
+                wandb_init.return_value.__enter__.return_value.log.call_count, 2
+            )
 
             (root / "data/real/val/images/e18_000000.png").unlink()
             with self.assertRaisesRegex(ValueError, "Unpaired filenames"):

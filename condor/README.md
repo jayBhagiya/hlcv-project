@@ -129,7 +129,18 @@ This job reads each `best.pt` and writes `summary.csv`, `summary.json`, `per-ima
 
 Evaluation is validation-only. Test data remains locked until final model selection. The comparison panel columns are synthetic, U-Net L1, Pix2Pix, transformer L1, and real.
 
-## 8. W&B logging
+## 8. Replicate the L1 finalists
+
+The L1 trainer stops after 10 consecutive epochs without validation-L1 improvement. Submit two additional seeds for both U-Net and transformer:
+
+```bash
+condor_submit condor/replicate_l1.sub
+condor_q
+```
+
+One submission queues four independent jobs: seeds 21 and 42 for each model. Do not rerun Pix2Pix unchanged. Each run keeps its best and last checkpoints under the existing `runs/` directory.
+
+## 9. W&B logging
 
 Training jobs log scalar metrics directly to W&B. They expect W&B authentication to be available in the worker environment; no offline sync is required.
 

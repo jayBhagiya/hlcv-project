@@ -86,6 +86,7 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path)
     parser.add_argument("--output", type=Path, default=Path("runs/unet-l1/seed-7"))
     parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--height", type=int, default=256)
@@ -101,6 +102,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.epochs < 1:
+        parser.error("Epochs must be positive")
+    if args.patience < 1:
+        parser.error("Patience must be positive")
     if args.height % 16 or args.width % 16:
         parser.error("Height and width must be divisible by 16")
     if args.output.exists() and (
@@ -162,6 +167,8 @@ def main() -> None:
         job_type="train",
     ) as run:
         best_l1 = math.inf
+        best_epoch = 0
+        stale_epochs = 0
         with (args.output / "history.csv").open(
             "w", newline="", encoding="utf-8"
         ) as file:
@@ -189,16 +196,39 @@ def main() -> None:
                 improved = val_l1 < best_l1
                 if improved:
                     best_l1 = val_l1
+                    best_epoch = epoch
+                    stale_epochs = 0
                     save_checkpoint(args.output / "best.pt", state)
                     save_validation_panel(
                         args.output / "validation-best.png", model, val_data, device
                     )
+                else:
+                    stale_epochs += 1
                 save_checkpoint(args.output / "last.pt", state)
                 save_validation_panel(
                     args.output / "validation-last.png", model, val_data, device
                 )
                 run.log(metrics, step=epoch)
                 print(json.dumps(metrics), flush=True)
+                if stale_epochs >= args.patience:
+                    print(
+                        json.dumps(
+                            {
+                                "early_stop_epoch": epoch,
+                                "best_epoch": best_epoch,
+                                "best_val_l1": best_l1,
+                            }
+                        ),
+                        flush=True,
+                    )
+                    break
+        run.summary.update(
+            {
+                "best_epoch": best_epoch,
+                "best_val_l1": best_l1,
+                "stopped_epoch": epoch,
+            }
+        )
 
 
 if __name__ == "__main__":
