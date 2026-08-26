@@ -112,24 +112,7 @@ Jobs write `config.json`, `history.csv`, `best.pt`, `last.pt`, and fixed validat
 
 Trainers refuse to reuse a non-empty output directory. Change `run` in the relevant submit file before starting another run.
 
-## 7. Compare validation results
-
-After all three training jobs finish, submit:
-
-```bash
-condor_submit condor/evaluate.sub
-condor_q
-```
-
-This job reads each `best.pt` and writes `summary.csv`, `summary.json`, `per-image.csv`, `comparison.png`, and `validation-curves.png` under:
-
-```text
-/data/users/jabhagiya/hlcv-project-gans/evaluations/evaluation-seed-7/
-```
-
-Evaluation is validation-only. Test data remains locked until final model selection. The comparison panel columns are synthetic, U-Net L1, Pix2Pix, transformer L1, and real.
-
-## 8. Replicate the L1 finalists
+## 7. Replicate the L1 finalists
 
 The L1 trainer stops after 10 consecutive epochs without validation-L1 improvement. Submit two additional seeds for both U-Net and transformer:
 
@@ -139,6 +122,33 @@ condor_q
 ```
 
 One submission queues four independent jobs: seeds 21 and 42 for each model. Do not rerun Pix2Pix unchanged. Each run keeps its best and last checkpoints under the existing `runs/` directory.
+
+## 8. Evaluate all validation runs
+
+Evaluation now includes L1, PSNR, LPIPS, and KID. After pulling these changes, rerun the setup job once to install the image-metric dependencies:
+
+```bash
+condor_submit condor/setup.sub
+condor_q
+```
+
+After setup finishes, rerun seed 7 and evaluate seeds 21 and 42:
+
+```bash
+condor_submit condor/evaluate_seed_7.sub
+condor_submit condor/evaluate_replicates.sub
+condor_q
+```
+
+The second submission queues one job per replication seed. Jobs read each `best.pt` and write `summary.csv`, `summary.json`, `per-image.csv`, `comparison.png`, and `validation-curves.png` under:
+
+```text
+/data/users/jabhagiya/hlcv-project-gans/evaluations/evaluation-seed-7-lpips-kid/
+/data/users/jabhagiya/hlcv-project-gans/evaluations/evaluation-seed-21-lpips-kid/
+/data/users/jabhagiya/hlcv-project-gans/evaluations/evaluation-seed-42-lpips-kid/
+```
+
+Seed 7 compares U-Net, Pix2Pix, and transformer. Seeds 21 and 42 compare only the two L1 finalists. KID uses 100 fixed-seed subsets of 100 validation images. Evaluation is validation-only; test data remains locked until final model selection.
 
 ## 9. W&B logging
 

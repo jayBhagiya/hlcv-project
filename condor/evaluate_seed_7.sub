@@ -1,6 +1,6 @@
 project_dir = /nethome/jabhagiya/projects/hlcv-project-gans
 data_dir = /data/users/jabhagiya/hlcv-project-gans
-run = evaluation-seed-7
+run = evaluation-seed-7-lpips-kid
 
 universe = docker
 docker_image = pytorch/pytorch:2.2.2-cuda11.8-cudnn8-runtime

@@ -10,6 +10,8 @@ import torch
 from PIL import Image, ImageDraw
 from torch import nn
 from torch.utils.data import DataLoader
+from torchmetrics.image.kid import KernelInceptionDistance
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 from src.paired_dataset import PairedImageDataset
 from src.transformer_unet import TransformerUNet
@@ -54,9 +56,24 @@ def _psnr(mse: float) -> float:
 @torch.inference_mode()
 def evaluate(
     models: dict[str, nn.Module], loader: DataLoader, device: torch.device
-) -> tuple[list[dict[str, str | float]], dict[str, tuple[float, float]]]:
+) -> tuple[list[dict[str, str | float]], dict[str, dict[str, float]]]:
     names = ("identity", *models)
     totals = {name: [0.0, 0.0, 0] for name in names}
+    lpips_metrics = {
+        name: LearnedPerceptualImagePatchSimilarity(
+            net_type="alex", reduction="none", normalize=True
+        ).to(device)
+        for name in names
+    }
+    kid_metrics = {
+        name: KernelInceptionDistance(
+            feature=2048,
+            subsets=100,
+            subset_size=min(100, len(loader.dataset)),
+            normalize=True,
+        ).to(device)
+        for name in names
+    }
     rows: list[dict[str, str | float]] = []
 
     for synthetic, real, pair_ids in loader:
@@ -77,12 +94,27 @@ def evaluate(
             totals[name][0] += absolute.sum().item()
             totals[name][1] += squared.sum().item()
             totals[name][2] += difference.numel()
+            lpips_metrics[name].update(prediction, real)
+            kid_metrics[name].update(real, real=True)
+            kid_metrics[name].update(prediction, real=False)
         rows.extend(batch_rows)
 
-    summary = {
-        name: (absolute / pixels, _psnr(squared / pixels))
-        for name, (absolute, squared, pixels) in totals.items()
-    }
+    summary = {}
+    for name, (absolute, squared, pixels) in totals.items():
+        lpips = lpips_metrics[name].compute().flatten().cpu()
+        if len(lpips) != len(rows):
+            raise RuntimeError(f"LPIPS returned {len(lpips)} scores for {len(rows)} images")
+        for row, score in zip(rows, lpips, strict=True):
+            row[f"{name}_lpips"] = score.item()
+        torch.manual_seed(7)
+        kid_mean, kid_std = kid_metrics[name].compute()
+        summary[name] = {
+            "l1": absolute / pixels,
+            "psnr": _psnr(squared / pixels),
+            "lpips": lpips.mean().item(),
+            "kid_mean": kid_mean.item(),
+            "kid_std": kid_std.item(),
+        }
     return rows, summary
 
 
@@ -226,6 +258,8 @@ def main() -> None:
     dataset = PairedImageDataset(
         args.manifest, "val", size=(args.height, args.width), root=args.data_root
     )
+    if len(dataset) < 2:
+        parser.error("KID requires at least two validation images")
     loader = DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -240,7 +274,7 @@ def main() -> None:
     fields = ["pair_id"] + [
         field
         for name in ("identity", *models)
-        for field in (f"{name}_l1", f"{name}_psnr")
+        for field in (f"{name}_l1", f"{name}_psnr", f"{name}_lpips")
     ]
     with (args.output / "per-image.csv").open(
         "w", newline="", encoding="utf-8"
@@ -253,8 +287,7 @@ def main() -> None:
             "name": name,
             "method": "identity" if name == "identity" else methods[name],
             "checkpoint_epoch": "" if name == "identity" else epochs[name],
-            "l1": values[0],
-            "psnr": values[1],
+            **values,
         }
         for name, values in metrics.items()
     ]
@@ -268,6 +301,14 @@ def main() -> None:
                 "split": "val",
                 "samples": len(dataset),
                 "size": [args.height, args.width],
+                "lpips": {"network": "alex", "normalize": True},
+                "kid": {
+                    "feature": 2048,
+                    "subsets": 100,
+                    "subset_size": min(100, len(dataset)),
+                    "normalize": True,
+                    "seed": 7,
+                },
                 "panel_columns": ["synthetic", *models, "real"],
                 "results": summary_rows,
             },
