@@ -81,18 +81,28 @@ Wrote 2126 pairs to /data/users/jabhagiya/hlcv-project-gans/manifests/pairs.csv 
 
 ## 6. Submit training
 
+Submit the L1 baseline:
+
 ```bash
 condor_submit condor/train_l1.sub
 condor_q
 ```
 
-Training writes `config.json`, `history.csv`, and `best.pt` under:
+After validating the L1 baseline, submit Pix2Pix:
+
+```bash
+condor_submit condor/train_pix2pix.sub
+condor_q
+```
+
+Jobs write `config.json`, `history.csv`, and `best.pt` under their run directories:
 
 ```text
 /data/users/jabhagiya/hlcv-project-gans/runs/unet-l1-seed-7/
+/data/users/jabhagiya/hlcv-project-gans/runs/pix2pix-seed-7/
 ```
 
-Trainer refuses to reuse a non-empty output directory. Change `run` in `train_l1.sub` before starting another run.
+Trainers refuse to reuse a non-empty output directory. Change `run` in the relevant submit file before starting another run.
 
 ## 7. Sync W&B from the local machine
 
@@ -105,5 +115,7 @@ rsync -ah --info=progress2 \
 .venv/bin/wandb login
 .venv/bin/wandb sync runs/unet-l1-seed-7/wandb/offline-run-*
 ```
+
+Replace `unet-l1-seed-7` with `pix2pix-seed-7` to copy and sync the Pix2Pix run.
 
 Never place a W&B API key in a submit file or commit it.
