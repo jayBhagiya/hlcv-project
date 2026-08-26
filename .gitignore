@@ -1,14 +1,9 @@
-# Ignore the node_modules directory
-wandb
-data
-checkpoints
-weights
-
-# ipynb checkpoints
-.ipynb_checkpoints
-.pth
-
-# python bytecode-compiled
-__pycache__
-*.egg-info/
+data/
+runs/
+wandb/
 .venv/
+*.egg-info/
+*.pt
+*.pth
+__pycache__/
+.ipynb_checkpoints/

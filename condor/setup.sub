@@ -11,9 +11,9 @@ should_transfer_files = NO
 getenv = HOME
 +WantGPUHomeMounted = true
 
-output = $(project_dir)/logs/setup.$(ClusterId).$(ProcId).out
-error = $(project_dir)/logs/setup.$(ClusterId).$(ProcId).err
-log = $(project_dir)/logs/setup.$(ClusterId).log
+output = $(data_dir)/logs/setup.$(ClusterId).$(ProcId).out
+error = $(data_dir)/logs/setup.$(ClusterId).$(ProcId).err
+log = $(data_dir)/logs/setup.$(ClusterId).log
 
 request_cpus = 4
 request_memory = 12G
