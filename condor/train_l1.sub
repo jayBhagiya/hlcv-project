@@ -6,7 +6,7 @@ universe = docker
 docker_image = pytorch/pytorch:2.2.2-cuda11.8-cudnn8-runtime
 initialdir = /nethome/jabhagiya
 executable = $(project_dir)/condor/run.sh
-arguments = -m src.train_l1 --manifest $(project_dir)/manifests/pairs.csv --data-root $(data_dir) --output $(data_dir)/runs/$(run) --device cuda --wandb-mode online --wandb-project hlcv-sim2real
+arguments = -m src.train_l1 --manifest $(data_dir)/manifests/pairs.csv --data-root $(data_dir) --output $(data_dir)/runs/$(run) --device cuda --wandb-mode offline --wandb-project hlcv-sim2real
 environment = "PROJECT_DIR=$(project_dir) DATA_DIR=$(data_dir) VENV=$(data_dir)/venvs/hlcv-project-gans REQUIRE_CUDA=1"
 should_transfer_files = NO
 getenv = HOME

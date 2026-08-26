@@ -26,6 +26,8 @@ Generate or verify the manifest:
 python -m src.data_manifest --data-dir data --output manifests/pairs.csv
 ```
 
+This command is for local use. Remote manifest generation uses the CPU job in `condor/data_manifest.sub`.
+
 Expected result: 2,126 pairs, split into 1,554 train, 233 validation, and 339 test images.
 
 ## Local setup and checks

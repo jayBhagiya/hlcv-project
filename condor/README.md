@@ -1,6 +1,6 @@
 # Remote HTCondor setup
 
-These files follow the LSV Docker and HTCondor layout. Jobs are not submitted automatically.
+These files follow the LSV Docker and HTCondor layout. Jobs are not submitted automatically. Run all project scripts through HTCondor; use the submit machine only for repository and data setup, job submission, and monitoring.
 
 Submit files currently assume:
 
@@ -10,7 +10,7 @@ Data:    /data/users/jabhagiya/hlcv-project-gans
 Host:    submit.lsv.uni-saarland.de
 ```
 
-If your remote account uses different paths, update `project_dir` and `data_dir` at the top of both `.sub` files.
+If your remote account uses different paths, update `project_dir` and `data_dir` at the top of all `.sub` files.
 
 ## 1. Copy the repository
 
@@ -63,40 +63,23 @@ condor_q
 
 `setup.sub` installs uv 0.11.30, Python 3.11.15, and CUDA 11.8 PyTorch into shared storage. Inspect setup output under `/data/users/jabhagiya/hlcv-project-gans/logs/` before continuing.
 
-## 5. Log in to W&B
+## 5. Generate the manifest on a CPU worker
 
-After setup finishes, authenticate once on the submit machine:
-
-```bash
-/data/users/jabhagiya/hlcv-project-gans/venvs/hlcv-project-gans/bin/wandb login
-```
-
-Never place the API key in a submit file or commit it. `train_l1.sub` uses online logging under the `hlcv-sim2real` project. If compute nodes cannot reach W&B, change `--wandb-mode online` to `--wandb-mode offline`, then sync the saved run later:
-
-```bash
-/data/users/jabhagiya/hlcv-project-gans/venvs/hlcv-project-gans/bin/wandb sync \
-    /data/users/jabhagiya/hlcv-project-gans/runs/unet-l1-seed-7/wandb/offline-run-*
-```
-
-## 6. Verify remote data
-
-After setup finishes:
+After setup finishes, submit the manifest job:
 
 ```bash
 cd /nethome/jabhagiya/projects/hlcv-project-gans
-/data/users/jabhagiya/hlcv-project-gans/venvs/hlcv-project-gans/bin/python \
-    -m src.data_manifest \
-    --data-dir /data/users/jabhagiya/hlcv-project-gans/data \
-    --output manifests/pairs.csv
+condor_submit condor/data_manifest.sub
+condor_q
 ```
 
-Expected output:
+The CPU job reads the remote images and writes `/data/users/jabhagiya/hlcv-project-gans/manifests/pairs.csv`. Its output should contain:
 
 ```text
-Wrote 2126 pairs to manifests/pairs.csv (train=1554, val=233, test=339)
+Wrote 2126 pairs to /data/users/jabhagiya/hlcv-project-gans/manifests/pairs.csv (train=1554, val=233, test=339)
 ```
 
-## 7. Submit training
+## 6. Submit training
 
 ```bash
 condor_submit condor/train_l1.sub
@@ -110,3 +93,17 @@ Training writes `config.json`, `history.csv`, and `best.pt` under:
 ```
 
 Trainer refuses to reuse a non-empty output directory. Change `run` in `train_l1.sub` before starting another run.
+
+## 7. Sync W&B from the local machine
+
+`train_l1.sub` records W&B runs offline, so no W&B command or API key is needed on the submit machine. After training finishes, copy the run back from your local repository:
+
+```bash
+rsync -ah --info=progress2 \
+    jabhagiya@submit.lsv.uni-saarland.de:/data/users/jabhagiya/hlcv-project-gans/runs/unet-l1-seed-7/ \
+    runs/unet-l1-seed-7/
+.venv/bin/wandb login
+.venv/bin/wandb sync runs/unet-l1-seed-7/wandb/offline-run-*
+```
+
+Never place a W&B API key in a submit file or commit it.
