@@ -6,10 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import torch
 from PIL import Image
 
 from src.data_manifest import build_manifest
-from src.paired_dataset import PairedImageDataset
+from src.paired_dataset import PairedImageDataset, UnpairedImageDataset
 from src.train_l1 import main as train_main
 from src.unet import UNet
 
@@ -54,6 +55,11 @@ class DataManifestTest(unittest.TestCase):
                 (synthetic.shape, real.shape), ((3, 32, 48), (3, 32, 48))
             )
             self.assertEqual(pair_id, "e18_000000")
+            unpaired = UnpairedImageDataset(output, "train", size=(32, 48))
+            source, target = unpaired[0]
+            self.assertEqual((source.shape, target.shape), ((3, 32, 48), (3, 32, 48)))
+            self.assertTrue(torch.all((-1 <= source) & (source <= 1)))
+            self.assertTrue(torch.all((-1 <= target) & (target <= 1)))
             model = UNet(base_channels=4)
             self.assertEqual(model(synthetic[None]).shape, (1, 3, 32, 48))
 

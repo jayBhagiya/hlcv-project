@@ -54,3 +54,34 @@ class PairedImageDataset(Dataset):
             synthetic = synthetic.flip(-1)
             real = real.flip(-1)
         return synthetic, real, row["pair_id"]
+
+
+class UnpairedImageDataset(Dataset):
+    """Sample independent source and target images from one manifest split."""
+
+    def __init__(
+        self,
+        manifest: Path,
+        split: str,
+        size: tuple[int, int] = (256, 384),
+        root: Path | None = None,
+        horizontal_flip: bool = False,
+    ) -> None:
+        self.data = PairedImageDataset(manifest, split, size=size, root=root)
+        self.horizontal_flip = horizontal_flip
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        target_index = torch.randint(len(self.data), ()).item()
+        source_row = self.data.rows[index]
+        target_row = self.data.rows[target_index]
+        source = self.data._load(source_row["synthetic_path"])
+        target = self.data._load(target_row["real_path"])
+        if self.horizontal_flip:
+            if torch.rand(()) < 0.5:
+                source = source.flip(-1)
+            if torch.rand(()) < 0.5:
+                target = target.flip(-1)
+        return source.mul(2).sub(1), target.mul(2).sub(1)

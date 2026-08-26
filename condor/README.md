@@ -150,8 +150,47 @@ The second submission queues one job per replication seed. Jobs read each `best.
 
 Seed 7 compares U-Net, Pix2Pix, and transformer. Seeds 21 and 42 compare only the two L1 finalists. KID uses 100 fixed-seed subsets of 100 validation images. Evaluation is validation-only; test data remains locked until final model selection.
 
-## 9. W&B logging
+## 9. Train and evaluate CycleGAN-Turbo
 
-Training jobs log scalar metrics directly to W&B. They expect W&B authentication to be available in the worker environment; no offline sync is required.
+CycleGAN-Turbo uses a separate uv environment so its pinned diffusion dependencies do not disturb the completed baselines. Submit its setup job first:
+
+```bash
+condor_submit condor/setup_turbo.sub
+condor_q
+```
+
+The job installs the `turbo` dependency extra and downloads the checksum-verified model runtime from official img2img-turbo commit `86f5414`. Model and pretrained feature weights use shared caches under `/data/users/jabhagiya/hlcv-project-gans/cache/`.
+
+After setup succeeds, submit the single seed-7 training run:
+
+```bash
+condor_submit condor/train_cyclegan_turbo.sub
+condor_q
+```
+
+The trainer samples the synthetic and real training domains independently, runs 5,000 steps at `256x384`, logs scalar losses to W&B, and writes `config.json`, `history.csv`, `last.pt`, and `validation-last.png` under:
+
+```text
+/data/users/jabhagiya/hlcv-project-gans/runs/cyclegan-turbo-seed-7/
+```
+
+It never uploads dataset or generated images to W&B. When training finishes, evaluate `last.pt` together with the seed-7 baselines:
+
+```bash
+condor_submit condor/evaluate_cyclegan_turbo.sub
+condor_q
+```
+
+The validation-only result is written to:
+
+```text
+/data/users/jabhagiya/hlcv-project-gans/evaluations/evaluation-seed-7-with-turbo/
+```
+
+The job keeps test scene `e18` locked and uses batch size 1 because the diffusion backbone is substantially larger than the earlier generators.
+
+## 10. W&B logging
+
+Training jobs log scalar metrics directly to W&B. They expect W&B authentication to be available in the worker environment; no offline sync is required. CycleGAN-Turbo deliberately logs no images.
 
 Never place a W&B API key in a submit file or commit it. Copy run directories back with `rsync` when local checkpoints or validation panels are needed.

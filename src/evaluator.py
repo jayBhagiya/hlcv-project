@@ -35,7 +35,14 @@ def load_generator(
     if not isinstance(checkpoint, dict):
         raise ValueError(f"Invalid checkpoint: {checkpoint_path}")
     config = checkpoint.get("config", {})
-    if "generator" in checkpoint:
+    epoch = int(checkpoint.get("epoch", 0))
+    if config.get("method") == "cyclegan-turbo":
+        from src.turbo_generator import load_turbo_generator
+
+        del checkpoint
+        model = load_turbo_generator(checkpoint_path, config, device)
+        method, weights = "cyclegan-turbo", None
+    elif "generator" in checkpoint:
         model, method, weights = UNet(), "pix2pix", checkpoint["generator"]
     elif "model" in checkpoint:
         method = config.get("model", "unet")
@@ -45,8 +52,9 @@ def load_generator(
         weights = checkpoint["model"]
     else:
         raise ValueError(f"Checkpoint has no generator weights: {checkpoint_path}")
-    model.load_state_dict(weights)
-    return model.to(device).eval(), method, int(checkpoint.get("epoch", 0))
+    if weights is not None:
+        model.load_state_dict(weights)
+    return model.to(device).eval(), method, epoch
 
 
 def _psnr(mse: float) -> float:
@@ -151,16 +159,23 @@ def _read_history(checkpoint: Path) -> list[dict[str, str]]:
         raise ValueError(f"Training history missing: {path}")
     with path.open(newline="", encoding="utf-8") as file:
         rows = list(csv.DictReader(file))
-    if not rows or not {"epoch", "val_l1", "val_psnr"} <= rows[0].keys():
+    if not rows or not ({"epoch", "step"} & rows[0].keys()):
         raise ValueError(f"Invalid training history: {path}")
     return rows
 
 
 def save_validation_curves(path: Path, runs: list[tuple[str, Path]]) -> None:
-    histories = {name: _read_history(checkpoint) for name, checkpoint in runs}
+    histories = {
+        name: rows
+        for name, checkpoint in runs
+        if {"epoch", "val_l1", "val_psnr"}
+        <= (rows := _read_history(checkpoint))[0].keys()
+    }
+    if not histories:
+        return
     image = Image.new("RGB", (1000, 700), "white")
     draw = ImageDraw.Draw(image)
-    for index, (name, _) in enumerate(runs):
+    for index, name in enumerate(histories):
         x = 20 + index * 190
         draw.line((x, 25, x + 24, 25), fill=COLORS[index % len(COLORS)], width=3)
         draw.text((x + 30, 18), name, fill="black")
@@ -269,6 +284,7 @@ def main() -> None:
         persistent_workers=args.workers > 0,
     )
 
+    torch.manual_seed(7)
     rows, metrics = evaluate(models, loader, device)
     args.output.mkdir(parents=True, exist_ok=True)
     fields = ["pair_id"] + [
@@ -317,6 +333,7 @@ def main() -> None:
         + "\n",
         encoding="utf-8",
     )
+    torch.manual_seed(7)
     save_comparison_panel(args.output / "comparison.png", models, dataset, device)
     save_validation_curves(args.output / "validation-curves.png", args.run)
     print(json.dumps(summary_rows), flush=True)

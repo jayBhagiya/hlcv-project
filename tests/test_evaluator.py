@@ -93,6 +93,24 @@ class EvaluatorTest(unittest.TestCase):
                 )
                 runs.extend(("--run", f"{name}={checkpoint}"))
 
+            turbo = root / "turbo"
+            turbo.mkdir()
+            turbo_checkpoint = turbo / "last.pt"
+            torch.save(
+                {
+                    "epoch": 4,
+                    "config": {
+                        "method": "cyclegan-turbo",
+                        "target_prompt": "a real driving scene",
+                    },
+                },
+                turbo_checkpoint,
+            )
+            (turbo / "history.csv").write_text(
+                "step,epoch,cycle_a\n1,1,0.5\n", encoding="utf-8"
+            )
+            runs.extend(("--run", f"cyclegan-turbo={turbo_checkpoint}"))
+
             output = root / "evaluation"
             arguments = [
                 "evaluator",
@@ -114,7 +132,10 @@ class EvaluatorTest(unittest.TestCase):
             ]
             with patch.object(sys, "argv", arguments), patch(
                 "src.evaluator.LearnedPerceptualImagePatchSimilarity", FakeLPIPS
-            ), patch("src.evaluator.KernelInceptionDistance", FakeKID):
+            ), patch("src.evaluator.KernelInceptionDistance", FakeKID), patch(
+                "src.turbo_generator.load_turbo_generator",
+                return_value=torch.nn.Identity(),
+            ):
                 main()
 
             summary = json.loads((output / "summary.json").read_text())
@@ -122,7 +143,7 @@ class EvaluatorTest(unittest.TestCase):
             self.assertEqual(summary["samples"], 2)
             self.assertEqual(
                 [result["name"] for result in summary["results"]],
-                ["identity", "unet", "pix2pix", "transformer"],
+                ["identity", "unet", "pix2pix", "transformer", "cyclegan-turbo"],
             )
             self.assertTrue(
                 all(
@@ -133,9 +154,9 @@ class EvaluatorTest(unittest.TestCase):
             with (output / "per-image.csv").open(newline="", encoding="utf-8") as file:
                 rows = list(csv.DictReader(file))
             self.assertEqual(len(rows), 2)
-            self.assertIn("transformer_lpips", rows[0])
+            self.assertIn("cyclegan-turbo_lpips", rows[0])
             with Image.open(output / "comparison.png") as panel:
-                self.assertEqual(panel.size, (240, 88))
+                self.assertEqual(panel.size, (288, 88))
             self.assertTrue((output / "validation-curves.png").is_file())
 
 

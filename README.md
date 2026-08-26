@@ -1,10 +1,10 @@
 # Synthetic-to-real image translation
 
-Reimplementation of the HLCV course project translating Virtual KITTI images into KITTI-like real images. Current work uses scene-held-out data splits and compares convolutional L1, Pix2Pix, and a parameter-matched transformer-bottleneck L1 generator.
+Reimplementation of the HLCV course project translating Virtual KITTI images into KITTI-like real images. Current work uses scene-held-out data splits and compares convolutional L1, Pix2Pix, a parameter-matched transformer-bottleneck L1 generator, and a final unpaired CycleGAN-Turbo experiment.
 
 ## Repository layout
 
-- `src/data_manifest.py`, `src/paired_dataset.py`, `src/unet.py`, `src/transformer_unet.py`, `src/train_l1.py`, `src/pix2pix.py`, `src/train_pix2pix.py`, and `src/evaluator.py`: current implementation.
+- `src/data_manifest.py`, `src/paired_dataset.py`, `src/unet.py`, `src/transformer_unet.py`, `src/train_l1.py`, `src/pix2pix.py`, `src/train_pix2pix.py`, `src/train_cyclegan_turbo.py`, and `src/evaluator.py`: current implementation.
 - `manifests/pairs.csv`: frozen train, validation, and test assignments.
 - `condor/`: uv environment and HTCondor job files.
 - `reports/`: original proposal and course reports.
@@ -41,3 +41,5 @@ uv pip install --python .venv/bin/python --torch-backend cpu -e .
 ```
 
 For remote GPU setup and data transfer, see [`condor/README.md`](condor/README.md).
+
+CycleGAN-Turbo uses the model runtime from the official [img2img-turbo](https://github.com/GaParmar/img2img-turbo) repository, pinned to commit `86f5414`. The Condor setup job downloads and verifies only the required upstream files.
