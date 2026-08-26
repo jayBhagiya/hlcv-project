@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from PIL import Image
+
 from src.data_manifest import build_manifest
 from src.paired_dataset import PairedImageDataset
 from src.train_l1 import main as train_main
@@ -82,6 +84,11 @@ class DataManifestTest(unittest.TestCase):
             ) as wandb_init:
                 train_main()
             self.assertTrue((training_output / "best.pt").is_file())
+            self.assertTrue((training_output / "last.pt").is_file())
+            self.assertTrue((training_output / "validation-best.png").is_file())
+            self.assertTrue((training_output / "validation-last.png").is_file())
+            with Image.open(training_output / "validation-best.png") as panel:
+                self.assertEqual(panel.size, (144, 32))
             self.assertEqual(wandb_init.call_args.kwargs["mode"], "offline")
             wandb_init.return_value.__enter__.return_value.log.assert_called_once()
 

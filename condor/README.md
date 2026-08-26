@@ -95,27 +95,25 @@ condor_submit condor/train_pix2pix.sub
 condor_q
 ```
 
-Jobs write `config.json`, `history.csv`, and `best.pt` under their run directories:
+After validating Pix2Pix, submit the transformer-bottleneck L1 model:
+
+```bash
+condor_submit condor/train_transformer_l1.sub
+condor_q
+```
+
+Jobs write `config.json`, `history.csv`, `best.pt`, `last.pt`, and fixed validation panels under their run directories. Panel columns are synthetic, prediction, and real:
 
 ```text
 /data/users/jabhagiya/hlcv-project-gans/runs/unet-l1-seed-7/
 /data/users/jabhagiya/hlcv-project-gans/runs/pix2pix-seed-7/
+/data/users/jabhagiya/hlcv-project-gans/runs/transformer-l1-seed-7/
 ```
 
 Trainers refuse to reuse a non-empty output directory. Change `run` in the relevant submit file before starting another run.
 
-## 7. Sync W&B from the local machine
+## 7. W&B logging
 
-`train_l1.sub` records W&B runs offline, so no W&B command or API key is needed on the submit machine. After training finishes, copy the run back from your local repository:
+Training jobs log scalar metrics directly to W&B. They expect W&B authentication to be available in the worker environment; no offline sync is required.
 
-```bash
-rsync -ah --info=progress2 \
-    jabhagiya@submit.lsv.uni-saarland.de:/data/users/jabhagiya/hlcv-project-gans/runs/unet-l1-seed-7/ \
-    runs/unet-l1-seed-7/
-.venv/bin/wandb login
-.venv/bin/wandb sync runs/unet-l1-seed-7/wandb/offline-run-*
-```
-
-Replace `unet-l1-seed-7` with `pix2pix-seed-7` to copy and sync the Pix2Pix run.
-
-Never place a W&B API key in a submit file or commit it.
+Never place a W&B API key in a submit file or commit it. Copy run directories back with `rsync` when local checkpoints or validation panels are needed.

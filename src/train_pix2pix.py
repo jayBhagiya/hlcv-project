@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 from src.paired_dataset import PairedImageDataset
 from src.pix2pix import PatchDiscriminator
-from src.train_l1 import run_epoch, save_checkpoint
+from src.train_l1 import run_epoch, save_checkpoint, save_validation_panel
 from src.unet import UNet
 
 
@@ -206,9 +206,20 @@ def main() -> None:
                     "metrics": metrics,
                     "config": config,
                 }
-                if val_l1 < best_l1:
+                improved = val_l1 < best_l1
+                if improved:
                     best_l1 = val_l1
                     save_checkpoint(args.output / "best.pt", state)
+                    save_validation_panel(
+                        args.output / "validation-best.png",
+                        generator,
+                        val_data,
+                        device,
+                    )
+                save_checkpoint(args.output / "last.pt", state)
+                save_validation_panel(
+                    args.output / "validation-last.png", generator, val_data, device
+                )
                 run.log(metrics, step=epoch)
                 print(json.dumps(metrics), flush=True)
 

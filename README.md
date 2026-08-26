@@ -1,10 +1,10 @@
 # Synthetic-to-real image translation
 
-Reimplementation of the HLCV course project translating Virtual KITTI images into KITTI-like real images. Current work uses scene-held-out data splits and compares a U-Net trained with L1 loss against Pix2Pix using the same generator.
+Reimplementation of the HLCV course project translating Virtual KITTI images into KITTI-like real images. Current work uses scene-held-out data splits and compares convolutional L1, Pix2Pix, and a parameter-matched transformer-bottleneck L1 generator.
 
 ## Repository layout
 
-- `src/data_manifest.py`, `src/paired_dataset.py`, `src/unet.py`, `src/train_l1.py`, `src/pix2pix.py`, and `src/train_pix2pix.py`: current implementation.
+- `src/data_manifest.py`, `src/paired_dataset.py`, `src/unet.py`, `src/transformer_unet.py`, `src/train_l1.py`, `src/pix2pix.py`, and `src/train_pix2pix.py`: current implementation.
 - `manifests/pairs.csv`: frozen train, validation, and test assignments.
 - `condor/`: uv environment and HTCondor job files.
 - `reports/`: original proposal and course reports.

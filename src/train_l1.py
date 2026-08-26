@@ -1,4 +1,4 @@
-"""Train scene-held-out U-Net with pixel L1 loss."""
+"""Train a scene-held-out image translator with pixel L1 loss."""
 
 import argparse
 import csv
@@ -8,14 +8,17 @@ from pathlib import Path
 
 import torch
 import wandb
+from PIL import Image
+from torch import nn
 from torch.utils.data import DataLoader
 
 from src.paired_dataset import PairedImageDataset
+from src.transformer_unet import TransformerUNet
 from src.unet import UNet
 
 
 def run_epoch(
-    model: UNet,
+    model: nn.Module,
     loader: DataLoader,
     device: torch.device,
     optimizer: torch.optim.Optimizer | None = None,
@@ -52,6 +55,31 @@ def save_checkpoint(path: Path, state: dict) -> None:
     temporary.replace(path)
 
 
+def save_validation_panel(
+    path: Path,
+    model: nn.Module,
+    dataset: PairedImageDataset,
+    device: torch.device,
+) -> None:
+    was_training = model.training
+    model.eval()
+    rows = []
+    indices = sorted(
+        {0, len(dataset) // 3, 2 * len(dataset) // 3, len(dataset) - 1}
+    )
+    with torch.no_grad():
+        for index in indices:
+            synthetic, real, _ = dataset[index]
+            prediction = model(synthetic[None].to(device))[0].cpu()
+            rows.append(torch.cat((synthetic, prediction, real), dim=2))
+    panel = torch.cat(rows, dim=1)
+    array = panel.mul(255).clamp(0, 255).byte().permute(1, 2, 0).numpy()
+    temporary = path.with_suffix(".tmp.png")
+    Image.fromarray(array).save(temporary)
+    temporary.replace(path)
+    model.train(was_training)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=Path("manifests/pairs.csv"))
@@ -63,6 +91,7 @@ def main() -> None:
     parser.add_argument("--height", type=int, default=256)
     parser.add_argument("--width", type=int, default=384)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--model", choices=("unet", "transformer"), default="unet")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--wandb-project", default="hlcv-sim2real")
     parser.add_argument(
@@ -111,7 +140,9 @@ def main() -> None:
     )
     val_loader = DataLoader(val_data, shuffle=False, **loader_options)
 
-    model = UNet().to(device)
+    model = (TransformerUNet() if args.model == "transformer" else UNet()).to(
+        device
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=2e-4, betas=(0.5, 0.999))
     config = {
         key: str(value) if isinstance(value, Path) else value
@@ -155,9 +186,17 @@ def main() -> None:
                     "metrics": metrics,
                     "config": config,
                 }
-                if val_l1 < best_l1:
+                improved = val_l1 < best_l1
+                if improved:
                     best_l1 = val_l1
                     save_checkpoint(args.output / "best.pt", state)
+                    save_validation_panel(
+                        args.output / "validation-best.png", model, val_data, device
+                    )
+                save_checkpoint(args.output / "last.pt", state)
+                save_validation_panel(
+                    args.output / "validation-last.png", model, val_data, device
+                )
                 run.log(metrics, step=epoch)
                 print(json.dumps(metrics), flush=True)
 
