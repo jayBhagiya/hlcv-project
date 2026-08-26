@@ -1,155 +1,285 @@
-import wandb
-import numpy as np
-from tqdm import tqdm
+"""Compare trained generators on the locked validation split."""
+
+import argparse
+import csv
+import json
+import math
+from pathlib import Path
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from PIL import Image, ImageDraw
+from torch import nn
+from torch.utils.data import DataLoader
 
-import torchvision.transforms as transforms
-from torch.utils.data import Dataset, DataLoader
-from sklearn.metrics import mean_squared_error
-from torchvision.models import inception_v3
-from scipy.linalg import sqrtm
-from torch.nn.functional import adaptive_avg_pool2d
-from torchvision.transforms import ToTensor, Resize, Normalize
+from src.paired_dataset import PairedImageDataset
+from src.transformer_unet import TransformerUNet
+from src.unet import UNet
 
-from models import Generator
-from datasets import CustomDataset
 
-class GAN_Evaluator:
-    def __init__(self, generator, val_dataloader, log_on_wandb=False, device='cuda'):
-        self.generator = generator.to(device).eval()
-        self.val_dataloader = val_dataloader
-        self.device = device
-        self.inception_model = inception_v3(pretrained=True, transform_input=False).to(self.device)
-        self.inception_model.eval()
+COLORS = ("#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c")
 
-        self.transform = transforms.Compose([
-            Resize((299, 299)),
-            Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-        ])
 
-        self.n_splits = 10
+def parse_run(value: str) -> tuple[str, Path]:
+    name, separator, checkpoint = value.partition("=")
+    if not separator or not name or not checkpoint:
+        raise argparse.ArgumentTypeError("Run must be NAME=CHECKPOINT")
+    return name, Path(checkpoint)
 
-        if log_on_wandb:
-	        # Initialize wandb
-	        wandb.init(project="hlcv-gan-evaluation", entity="jaybhagiya")
 
-    def calculate_rmse(self, real_images, generated_images):
-        real_images = real_images.view(real_images.size(0), -1).cpu().detach().numpy()
-        generated_images = generated_images.view(generated_images.size(0), -1).cpu().detach().numpy()
-        return np.sqrt(mean_squared_error(real_images, generated_images))
+def load_generator(
+    checkpoint_path: Path, device: torch.device
+) -> tuple[nn.Module, str, int]:
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    if not isinstance(checkpoint, dict):
+        raise ValueError(f"Invalid checkpoint: {checkpoint_path}")
+    config = checkpoint.get("config", {})
+    if "generator" in checkpoint:
+        model, method, weights = UNet(), "pix2pix", checkpoint["generator"]
+    elif "model" in checkpoint:
+        method = config.get("model", "unet")
+        if method not in {"unet", "transformer"}:
+            raise ValueError(f"Unknown model in checkpoint: {method}")
+        model = TransformerUNet() if method == "transformer" else UNet()
+        weights = checkpoint["model"]
+    else:
+        raise ValueError(f"Checkpoint has no generator weights: {checkpoint_path}")
+    model.load_state_dict(weights)
+    return model.to(device).eval(), method, int(checkpoint.get("epoch", 0))
 
-    def perceptual_loss(self, real_images, generated_images):
-        def extract_features(images, model):
-            features = []
-            for image in images:
-                image = image.to(self.device)
-                with torch.no_grad():
-                    feature = model(image.unsqueeze(0))
-                features.append(feature.cpu().numpy().reshape(-1))
-            return np.array(features)
 
-        real_features = extract_features(real_images, self.generator)
-        gen_features = extract_features(generated_images, self.generator)
-        perceptual_loss = np.mean(np.square(real_features - gen_features))
-        return perceptual_loss
+def _psnr(mse: float) -> float:
+    return math.inf if mse == 0 else -10 * math.log10(mse)
 
-    # scale an array of images to a new size
-    def scale_images(slef, images, new_shape):
-        transform = Resize(new_shape[:2])
-        images_list = [transform(image) for image in images]
-        return torch.stack(images_list)
 
-    def inception_score(self, preds, splits=10):
-        N = preds.shape[0]
-        split_scores = []
+@torch.inference_mode()
+def evaluate(
+    models: dict[str, nn.Module], loader: DataLoader, device: torch.device
+) -> tuple[list[dict[str, str | float]], dict[str, tuple[float, float]]]:
+    names = ("identity", *models)
+    totals = {name: [0.0, 0.0, 0] for name in names}
+    rows: list[dict[str, str | float]] = []
 
-        for k in range(splits):
-            part = preds[k * (N // splits): (k + 1) * (N // splits), :]
-            py = np.mean(part, axis=0)
-            scores = []
-            for i in range(part.shape[0]):
-                pyx = part[i, :]
-                scores.append(np.sum(pyx * np.log(pyx / py)))
-            split_scores.append(np.exp(np.mean(scores)))
+    for synthetic, real, pair_ids in loader:
+        synthetic = synthetic.to(device, non_blocking=True)
+        real = real.to(device, non_blocking=True)
+        predictions = {"identity": synthetic}
+        predictions.update({name: model(synthetic) for name, model in models.items()})
+        batch_rows = [{"pair_id": pair_id} for pair_id in pair_ids]
+        for name, prediction in predictions.items():
+            difference = prediction - real
+            absolute = difference.abs().flatten(1)
+            squared = difference.square().flatten(1)
+            l1 = absolute.mean(1)
+            mse = squared.mean(1)
+            for index, row in enumerate(batch_rows):
+                row[f"{name}_l1"] = l1[index].item()
+                row[f"{name}_psnr"] = _psnr(mse[index].item())
+            totals[name][0] += absolute.sum().item()
+            totals[name][1] += squared.sum().item()
+            totals[name][2] += difference.numel()
+        rows.extend(batch_rows)
 
-        return np.mean(split_scores), np.std(split_scores)
+    summary = {
+        name: (absolute / pixels, _psnr(squared / pixels))
+        for name, (absolute, squared, pixels) in totals.items()
+    }
+    return rows, summary
 
-    def evaluate(self):
-        idx = 0
-        rmse_scores = []
-        perceptual_losses = []
-        all_preds = []
-        gen_image_list = []
 
-        for synt_img, real_img in tqdm(self.val_dataloader, desc="Evaluating"):
-            synt_img = synt_img.to(self.device)
-            real_img = real_img.to(self.device)
+@torch.inference_mode()
+def save_comparison_panel(
+    path: Path,
+    models: dict[str, nn.Module],
+    dataset: PairedImageDataset,
+    device: torch.device,
+) -> None:
+    indices = sorted({0, len(dataset) // 3, 2 * len(dataset) // 3, len(dataset) - 1})
+    rows = []
+    for index in indices:
+        synthetic, real, _ = dataset[index]
+        batch = synthetic[None].to(device)
+        predictions = [model(batch)[0].cpu() for model in models.values()]
+        rows.append(torch.cat((synthetic, *predictions, real), dim=2))
+    panel = torch.cat(rows, dim=1)
+    array = panel.mul(255).clamp(0, 255).byte().permute(1, 2, 0).numpy()
+    grid = Image.fromarray(array)
+    header_height = 24
+    output = Image.new("RGB", (grid.width, grid.height + header_height), "white")
+    output.paste(grid, (0, header_height))
+    draw = ImageDraw.Draw(output)
+    column_width = dataset.size[1]
+    for column, label in enumerate(("synthetic", *models, "real")):
+        draw.text((column * column_width + 4, 6), label, fill="black")
+    output.save(path)
 
-            with torch.no_grad():
-                generated_img = self.generator(synt_img)
-                gen_image_list.append(generated_img)
 
-            # Log RMSE and Perceptual Loss after each datapoint
-            if log_on_wandb:
-	            if (idx + 1) % 10 == 0:
-	                wandb.log({"RMSE": self.calculate_rmse(real_img, generated_img)})
-	                wandb.log({"Perceptual Loss": self.perceptual_loss(real_img, generated_img)})
+def _read_history(checkpoint: Path) -> list[dict[str, str]]:
+    path = checkpoint.parent / "history.csv"
+    if not path.is_file():
+        raise ValueError(f"Training history missing: {path}")
+    with path.open(newline="", encoding="utf-8") as file:
+        rows = list(csv.DictReader(file))
+    if not rows or not {"epoch", "val_l1", "val_psnr"} <= rows[0].keys():
+        raise ValueError(f"Invalid training history: {path}")
+    return rows
 
-            rmse_scores.append(self.calculate_rmse(real_img, generated_img))
-            perceptual_losses.append(self.perceptual_loss(real_img, generated_img))
 
-            # Resize images to the size expected by InceptionV3
-            if (idx + 1) % self.n_splits == 0:
-                all_gen_images = torch.cat(gen_image_list, dim=0)
-                generated_image_resized = self.scale_images(all_gen_images, (299, 299, 3))
+def save_validation_curves(path: Path, runs: list[tuple[str, Path]]) -> None:
+    histories = {name: _read_history(checkpoint) for name, checkpoint in runs}
+    image = Image.new("RGB", (1000, 700), "white")
+    draw = ImageDraw.Draw(image)
+    for index, (name, _) in enumerate(runs):
+        x = 20 + index * 190
+        draw.line((x, 25, x + 24, 25), fill=COLORS[index % len(COLORS)], width=3)
+        draw.text((x + 30, 18), name, fill="black")
 
-                with torch.no_grad():
-                    gen_pred = self.inception_model(generated_image_resized)
-
-                all_preds.append(F.softmax(gen_pred, dim=1).cpu().numpy())
-                gen_image_list = []
-
-            idx += 1
-
-        all_preds = np.concatenate(all_preds, axis=0)
-        is_mean, is_std = self.inception_score(all_preds)
-
-        if log_on_wandb:
-        	wandb.log({"Final RMSE": np.mean(rmse_scores), "Final Perceptual Loss": np.mean(perceptual_losses), "Inception Mean": is_mean, "Inception Std": is_std})
-        	wandb.finish()
-
-        return {
-            "RMSE": np.mean(rmse_scores),
-            "Perceptual Loss": np.mean(perceptual_losses),
-            "Inception Score": (is_mean, is_std)
+    for metric, title, box in (
+        ("val_l1", "Validation L1", (70, 75, 970, 330)),
+        ("val_psnr", "Validation PSNR (dB)", (70, 410, 970, 665)),
+    ):
+        x0, y0, x1, y1 = box
+        series = {
+            name: [(float(row["epoch"]), float(row[metric])) for row in rows]
+            for name, rows in histories.items()
         }
+        values = [value for points in series.values() for _, value in points]
+        epochs = [epoch for points in series.values() for epoch, _ in points]
+        low, high = min(values), max(values)
+        if low == high:
+            low, high = low - 0.5, high + 0.5
+        first_epoch, last_epoch = min(epochs), max(epochs)
+        draw.text((x0, y0 - 22), title, fill="black")
+        draw.rectangle(box, outline="#6b7280")
+        for tick in range(5):
+            y = y1 - tick * (y1 - y0) / 4
+            value = low + tick * (high - low) / 4
+            draw.line((x0, y, x1, y), fill="#e5e7eb")
+            draw.text((8, y - 7), f"{value:.3f}", fill="#374151")
+        draw.text((x0, y1 + 8), f"epoch {first_epoch:g}", fill="#374151")
+        draw.text((x1 - 65, y1 + 8), f"{last_epoch:g}", fill="#374151")
+        for index, points in enumerate(series.values()):
+            coordinates = []
+            for epoch, value in points:
+                x = (
+                    x0
+                    if first_epoch == last_epoch
+                    else x0
+                    + (epoch - first_epoch)
+                    * (x1 - x0)
+                    / (last_epoch - first_epoch)
+                )
+                y = y1 - (value - low) * (y1 - y0) / (high - low)
+                coordinates.append((x, y))
+            color = COLORS[index % len(COLORS)]
+            if len(coordinates) == 1:
+                x, y = coordinates[0]
+                draw.ellipse((x - 2, y - 2, x + 2, y + 2), fill=color)
+            else:
+                draw.line(coordinates, fill=color, width=3)
+    image.save(path)
 
-if __name__ == '__main__':
-	IMG_SHAPE = (3, 368, 544)
-	BATCH_SIZE = 1
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-	real_val_folder = "~/hlcv-project-gans/data/real/val/images"
-	synt_val_folder = "~/hlcv-project-gans/data/synthetic/val/images"
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--manifest", type=Path, default=Path("manifests/pairs.csv"))
+    parser.add_argument("--data-root", type=Path)
+    parser.add_argument("--output", type=Path, default=Path("evaluations/seed-7"))
+    parser.add_argument("--run", type=parse_run, action="append", required=True)
+    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--height", type=int, default=256)
+    parser.add_argument("--width", type=int, default=384)
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    args = parser.parse_args()
 
-	transform = transforms.Compose([
-	    transforms.ToTensor(),
-	    transforms.Resize((IMG_SHAPE[1], IMG_SHAPE[2]))
-	])
+    names = [name for name, _ in args.run]
+    if len(names) != len(set(names)):
+        parser.error("Run names must be unique")
+    if "identity" in names:
+        parser.error("Run name 'identity' is reserved")
+    if args.height < 16 or args.width < 16 or args.height % 16 or args.width % 16:
+        parser.error("Height and width must be at least 16 and divisible by 16")
+    if args.output.exists() and (
+        not args.output.is_dir() or any(args.output.iterdir())
+    ):
+        parser.error(f"Output path is not an empty directory: {args.output}")
+    device_name = (
+        "cuda"
+        if args.device == "auto" and torch.cuda.is_available()
+        else "cpu" if args.device == "auto" else args.device
+    )
+    if device_name == "cuda" and not torch.cuda.is_available():
+        parser.error("CUDA requested but unavailable")
+    for _, checkpoint in args.run:
+        if not checkpoint.is_file():
+            parser.error(f"Checkpoint does not exist: {checkpoint}")
+        try:
+            _read_history(checkpoint)
+        except ValueError as error:
+            parser.error(str(error))
 
-	val_dataset = CustomDataset(real_val_folder, synt_val_folder, transform)
-	val_dataloader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    device = torch.device(device_name)
+    loaded = [load_generator(checkpoint, device) for _, checkpoint in args.run]
+    models = {name: loaded[index][0] for index, (name, _) in enumerate(args.run)}
+    methods = {name: loaded[index][1] for index, (name, _) in enumerate(args.run)}
+    epochs = {name: loaded[index][2] for index, (name, _) in enumerate(args.run)}
+    dataset = PairedImageDataset(
+        args.manifest, "val", size=(args.height, args.width), root=args.data_root
+    )
+    loader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.workers,
+        pin_memory=device.type == "cuda",
+        persistent_workers=args.workers > 0,
+    )
 
-	# Load generator and discriminator weights
-	gen_weights_path = '~/hlcv-project-gans/checkpoints/gen_weights_last'
-	generator = Generator(img_shape=(3, 368, 544))
-	generator.load_state_dict(torch.load(gen_weights_path))
+    rows, metrics = evaluate(models, loader, device)
+    args.output.mkdir(parents=True, exist_ok=True)
+    fields = ["pair_id"] + [
+        field
+        for name in ("identity", *models)
+        for field in (f"{name}_l1", f"{name}_psnr")
+    ]
+    with (args.output / "per-image.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as file:
+        writer = csv.DictWriter(file, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    summary_rows = [
+        {
+            "name": name,
+            "method": "identity" if name == "identity" else methods[name],
+            "checkpoint_epoch": "" if name == "identity" else epochs[name],
+            "l1": values[0],
+            "psnr": values[1],
+        }
+        for name, values in metrics.items()
+    ]
+    with (args.output / "summary.csv").open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=summary_rows[0])
+        writer.writeheader()
+        writer.writerows(summary_rows)
+    (args.output / "summary.json").write_text(
+        json.dumps(
+            {
+                "split": "val",
+                "samples": len(dataset),
+                "size": [args.height, args.width],
+                "panel_columns": ["synthetic", *models, "real"],
+                "results": summary_rows,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    save_comparison_panel(args.output / "comparison.png", models, dataset, device)
+    save_validation_curves(args.output / "validation-curves.png", args.run)
+    print(json.dumps(summary_rows), flush=True)
 
-	# Evaluate the generator
-	evaluator = GAN_Evaluator(generator, val_dataloader)
-	results = evaluator.evaluate()
 
-	print(results)
+if __name__ == "__main__":
+    main()

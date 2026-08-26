@@ -4,7 +4,7 @@ Reimplementation of the HLCV course project translating Virtual KITTI images int
 
 ## Repository layout
 
-- `src/data_manifest.py`, `src/paired_dataset.py`, `src/unet.py`, `src/transformer_unet.py`, `src/train_l1.py`, `src/pix2pix.py`, and `src/train_pix2pix.py`: current implementation.
+- `src/data_manifest.py`, `src/paired_dataset.py`, `src/unet.py`, `src/transformer_unet.py`, `src/train_l1.py`, `src/pix2pix.py`, `src/train_pix2pix.py`, and `src/evaluator.py`: current implementation.
 - `manifests/pairs.csv`: frozen train, validation, and test assignments.
 - `condor/`: uv environment and HTCondor job files.
 - `reports/`: original proposal and course reports.

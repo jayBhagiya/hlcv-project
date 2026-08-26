@@ -112,7 +112,24 @@ Jobs write `config.json`, `history.csv`, `best.pt`, `last.pt`, and fixed validat
 
 Trainers refuse to reuse a non-empty output directory. Change `run` in the relevant submit file before starting another run.
 
-## 7. W&B logging
+## 7. Compare validation results
+
+After all three training jobs finish, submit:
+
+```bash
+condor_submit condor/evaluate.sub
+condor_q
+```
+
+This job reads each `best.pt` and writes `summary.csv`, `summary.json`, `per-image.csv`, `comparison.png`, and `validation-curves.png` under:
+
+```text
+/data/users/jabhagiya/hlcv-project-gans/evaluations/evaluation-seed-7/
+```
+
+Evaluation is validation-only. Test data remains locked until final model selection. The comparison panel columns are synthetic, U-Net L1, Pix2Pix, transformer L1, and real.
+
+## 8. W&B logging
 
 Training jobs log scalar metrics directly to W&B. They expect W&B authentication to be available in the worker environment; no offline sync is required.
 
