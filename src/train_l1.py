@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 
 import torch
+import wandb
 from torch.utils.data import DataLoader
 
 from src.paired_dataset import PairedImageDataset
@@ -63,6 +64,12 @@ def main() -> None:
     parser.add_argument("--width", type=int, default=384)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--wandb-project", default="hlcv-sim2real")
+    parser.add_argument(
+        "--wandb-mode",
+        choices=("online", "offline", "disabled"),
+        default="disabled",
+    )
     args = parser.parse_args()
 
     if args.height % 16 or args.width % 16:
@@ -115,33 +122,44 @@ def main() -> None:
         json.dumps(config, indent=2) + "\n", encoding="utf-8"
     )
 
-    best_l1 = math.inf
-    with (args.output / "history.csv").open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(
-            file, fieldnames=("epoch", "train_l1", "val_l1", "val_psnr")
-        )
-        writer.writeheader()
-        for epoch in range(1, args.epochs + 1):
-            train_l1, _ = run_epoch(model, train_loader, device, optimizer)
-            val_l1, val_psnr = run_epoch(model, val_loader, device)
-            metrics = {
-                "epoch": epoch,
-                "train_l1": train_l1,
-                "val_l1": val_l1,
-                "val_psnr": val_psnr,
-            }
-            writer.writerow(metrics)
-            file.flush()
-            state = {
-                "epoch": epoch,
-                "model": model.state_dict(),
-                "metrics": metrics,
-                "config": config,
-            }
-            if val_l1 < best_l1:
-                best_l1 = val_l1
-                save_checkpoint(args.output / "best.pt", state)
-            print(json.dumps(metrics), flush=True)
+    with wandb.init(
+        project=args.wandb_project,
+        name=args.output.name,
+        config=config,
+        mode=args.wandb_mode,
+        dir=args.output,
+        job_type="train",
+    ) as run:
+        best_l1 = math.inf
+        with (args.output / "history.csv").open(
+            "w", newline="", encoding="utf-8"
+        ) as file:
+            writer = csv.DictWriter(
+                file, fieldnames=("epoch", "train_l1", "val_l1", "val_psnr")
+            )
+            writer.writeheader()
+            for epoch in range(1, args.epochs + 1):
+                train_l1, _ = run_epoch(model, train_loader, device, optimizer)
+                val_l1, val_psnr = run_epoch(model, val_loader, device)
+                metrics = {
+                    "epoch": epoch,
+                    "train_l1": train_l1,
+                    "val_l1": val_l1,
+                    "val_psnr": val_psnr,
+                }
+                writer.writerow(metrics)
+                file.flush()
+                state = {
+                    "epoch": epoch,
+                    "model": model.state_dict(),
+                    "metrics": metrics,
+                    "config": config,
+                }
+                if val_l1 < best_l1:
+                    best_l1 = val_l1
+                    save_checkpoint(args.output / "best.pt", state)
+                run.log(metrics, step=epoch)
+                print(json.dumps(metrics), flush=True)
 
 
 if __name__ == "__main__":

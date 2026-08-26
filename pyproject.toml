@@ -7,4 +7,5 @@ dependencies = [
     "numpy>=1.26,<2",
     "pillow>=10,<13",
     "torch>=2.2,<2.3",
+    "wandb>=0.28,<0.29",
 ]

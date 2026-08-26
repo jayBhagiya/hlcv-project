@@ -63,7 +63,22 @@ condor_q
 
 `setup.sub` installs uv 0.11.30, Python 3.11.15, and CUDA 11.8 PyTorch into shared storage. Inspect setup output under `/data/users/jabhagiya/hlcv-project-gans/logs/` before continuing.
 
-## 5. Verify remote data
+## 5. Log in to W&B
+
+After setup finishes, authenticate once on the submit machine:
+
+```bash
+/data/users/jabhagiya/hlcv-project-gans/venvs/hlcv-project-gans/bin/wandb login
+```
+
+Never place the API key in a submit file or commit it. `train_l1.sub` uses online logging under the `hlcv-sim2real` project. If compute nodes cannot reach W&B, change `--wandb-mode online` to `--wandb-mode offline`, then sync the saved run later:
+
+```bash
+/data/users/jabhagiya/hlcv-project-gans/venvs/hlcv-project-gans/bin/wandb sync \
+    /data/users/jabhagiya/hlcv-project-gans/runs/unet-l1-seed-7/wandb/offline-run-*
+```
+
+## 6. Verify remote data
 
 After setup finishes:
 
@@ -81,7 +96,7 @@ Expected output:
 Wrote 2126 pairs to manifests/pairs.csv (train=1554, val=233, test=339)
 ```
 
-## 6. Submit training
+## 7. Submit training
 
 ```bash
 condor_submit condor/train_l1.sub

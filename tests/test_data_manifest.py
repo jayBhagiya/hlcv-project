@@ -1,15 +1,14 @@
 import base64
 import csv
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-
-import torch
-from torch.utils.data import DataLoader
+from unittest.mock import patch
 
 from src.data_manifest import build_manifest
 from src.paired_dataset import PairedImageDataset
-from src.train_l1 import run_epoch
+from src.train_l1 import main as train_main
 from src.unet import UNet
 
 
@@ -55,15 +54,36 @@ class DataManifestTest(unittest.TestCase):
             self.assertEqual(pair_id, "e18_000000")
             model = UNet(base_channels=4)
             self.assertEqual(model(synthetic[None]).shape, (1, 3, 32, 48))
-            optimizer = torch.optim.Adam(model.parameters())
-            train_l1, train_psnr = run_epoch(
-                model,
-                DataLoader(PairedImageDataset(output, "train", size=(32, 48)), batch_size=3),
-                torch.device("cpu"),
-                optimizer,
-            )
-            self.assertGreater(train_l1, 0)
-            self.assertGreater(train_psnr, 0)
+
+            training_output = root / "training"
+            arguments = [
+                "train_l1",
+                "--manifest",
+                str(output),
+                "--output",
+                str(training_output),
+                "--epochs",
+                "1",
+                "--batch-size",
+                "3",
+                "--workers",
+                "0",
+                "--height",
+                "32",
+                "--width",
+                "48",
+                "--device",
+                "cpu",
+                "--wandb-mode",
+                "offline",
+            ]
+            with patch.object(sys, "argv", arguments), patch(
+                "src.train_l1.wandb.init"
+            ) as wandb_init:
+                train_main()
+            self.assertTrue((training_output / "best.pt").is_file())
+            self.assertEqual(wandb_init.call_args.kwargs["mode"], "offline")
+            wandb_init.return_value.__enter__.return_value.log.assert_called_once()
 
             (root / "data/real/val/images/e18_000000.png").unlink()
             with self.assertRaisesRegex(ValueError, "Unpaired filenames"):
