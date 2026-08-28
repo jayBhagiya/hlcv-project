@@ -41,7 +41,7 @@ if [[ "${1:-}" == "setup" || "${1:-}" == "setup-turbo" ]]; then
     "${VENV}/bin/python" -c \
         'import torch; assert torch.version.cuda == "11.8"; print(torch.__version__, torch.version.cuda)'
     if [[ "${setup_mode}" == "setup-turbo" ]]; then
-        "${VENV}/bin/python" -m src.turbo_runtime \
+        "${VENV}/bin/python" "${PROJECT_DIR}/src/turbo_runtime.py" \
             --output "${CYCLEGAN_TURBO_ROOT}"
         "${VENV}/bin/python" -c \
             'import diffusers, lpips, peft, transformers, vision_aided_loss, xformers; print("CycleGAN-Turbo dependencies ready")'

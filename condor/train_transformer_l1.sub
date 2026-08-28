@@ -1,10 +1,10 @@
-project_dir = /nethome/jabhagiya/projects/hlcv-project-gans
-data_dir = /data/users/jabhagiya/hlcv-project-gans
+project_dir = $(PROJECT_DIR:.)
+data_dir = $(DATA_DIR:.)
 run = transformer-l1-seed-7
 
 universe = docker
 docker_image = pytorch/pytorch:2.2.2-cuda11.8-cudnn8-runtime
-initialdir = /nethome/jabhagiya
+initialdir = $(project_dir)
 executable = $(project_dir)/condor/run.sh
 arguments = -m src.train_l1 --model transformer --manifest $(data_dir)/manifests/pairs.csv --data-root $(data_dir) --output $(data_dir)/runs/$(run) --device cuda --wandb-mode online --wandb-project hlcv-sim2real
 environment = "PROJECT_DIR=$(project_dir) DATA_DIR=$(data_dir) VENV=$(data_dir)/venvs/hlcv-project-gans REQUIRE_CUDA=1"

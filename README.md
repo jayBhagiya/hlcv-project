@@ -1,18 +1,25 @@
 # Synthetic-to-real image translation
 
-Reimplementation of the HLCV course project translating Virtual KITTI images into KITTI-like real images. Current work uses scene-held-out data splits and compares convolutional L1, Pix2Pix, a parameter-matched transformer-bottleneck L1 generator, and a final unpaired CycleGAN-Turbo experiment.
+High-Level Computer Vision course project for translating Virtual KITTI images into KITTI-like street scenes. The experiments compare four approaches:
+
+- convolutional U-Net trained with L1 reconstruction
+- Pix2Pix with a U-Net generator and PatchGAN discriminator
+- parameter-matched transformer-bottleneck U-Net trained with L1
+- unpaired CycleGAN-Turbo with an SD-Turbo generator
 
 ## Repository layout
 
-- `src/data_manifest.py`, `src/paired_dataset.py`, `src/unet.py`, `src/transformer_unet.py`, `src/train_l1.py`, `src/pix2pix.py`, `src/train_pix2pix.py`, `src/train_cyclegan_turbo.py`, and `src/evaluator.py`: current implementation.
-- `manifests/pairs.csv`: frozen train, validation, and test assignments.
-- `condor/`: uv environment and HTCondor job files.
-- `reports/`: original proposal and course reports.
-- Remaining `src/` scripts and `notebooks/`: historical experiments kept for reference.
+```text
+src/         datasets, models, trainers, and evaluation
+tests/       focused unit tests for the active pipeline
+condor/      uv setup and HTCondor submit files
+manifests/   frozen scene-held-out split
+reports/     course proposal and reports
+```
 
 ## Data
 
-Data is intentionally not committed. Expected image layout:
+Image data are not committed. Use the following layout:
 
 ```text
 data/
@@ -20,26 +27,25 @@ data/
 └── synthetic/{train,val}/images/
 ```
 
-Generate or verify the manifest:
+The frozen manifest contains 2,126 filename-matched pairs: 1,554 training, 233 validation, and 339 test images. To generate or verify it locally:
 
 ```bash
 python -m src.data_manifest --data-dir data --output manifests/pairs.csv
 ```
 
-This command is for local use. Remote manifest generation uses the CPU job in `condor/data_manifest.sub`.
+Use `condor/data_manifest.sub` when the data live on a cluster filesystem.
 
-Expected result: 2,126 pairs, split into 1,554 train, 233 validation, and 339 test images.
-
-## Local setup and checks
+## Local environment and checks
 
 ```bash
 uv python install 3.11.15
 uv venv --python 3.11.15
 uv pip install --python .venv/bin/python --torch-backend cpu -e .
 .venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python -m src.overfit_l1 --device cpu
 ```
 
-For remote GPU setup and data transfer, see [`condor/README.md`](condor/README.md).
+## HTCondor
 
-CycleGAN-Turbo uses the model runtime from the official [img2img-turbo](https://github.com/GaParmar/img2img-turbo) repository, pinned to commit `86f5414`. The Condor setup job downloads and verifies only the required upstream files.
+See [`condor/README.md`](condor/README.md) for portable path configuration, environment setup, training, and evaluation.
+
+CycleGAN-Turbo uses the official [img2img-turbo](https://github.com/GaParmar/img2img-turbo) runtime pinned to commit `86f5414`. The setup job downloads and verifies only the required upstream files.
