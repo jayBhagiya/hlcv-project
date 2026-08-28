@@ -227,10 +227,10 @@ def main() -> None:
     )
     discriminator_a = vision_aided_loss.Discriminator(
         cv_type="clip", loss_type="multilevel_sigmoid", device="cuda"
-    )
+    ).to(device)
     discriminator_b = vision_aided_loss.Discriminator(
         cv_type="clip", loss_type="multilevel_sigmoid", device="cuda"
-    )
+    ).to(device)
     discriminator_a.cv_ensemble.requires_grad_(False)
     discriminator_b.cv_ensemble.requires_grad_(False)
     perceptual_loss = lpips.LPIPS(net="vgg").to(device).eval()
